@@ -4,8 +4,8 @@ import fs from "fs";
 
 const uploadPath = "uploads";
 
-// ✅ Only create the uploads folder when running locally
-if (process.env.VERCEL !== "1") {
+// ✅ Only create uploads folder when running locally
+if (!process.env.VERCEL && process.env.NODE_ENV !== "production") {
   try {
     if (!fs.existsSync(uploadPath)) {
       fs.mkdirSync(uploadPath, { recursive: true });
@@ -21,9 +21,9 @@ if (process.env.VERCEL !== "1") {
 // ✅ Configure multer
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    if (process.env.VERCEL === "1") {
-      // Prevent file writing on Vercel
-      return cb(new Error("File uploads are not supported on Vercel."));
+    if (process.env.VERCEL) {
+      // Prevent writing on Vercel
+      return cb(new Error("File uploads are not supported on Vercel — use Cloudinary or S3."));
     }
     cb(null, uploadPath);
   },
@@ -40,7 +40,7 @@ const fileFilter = (req, file, cb) => {
   if (allowedExt.test(ext)) {
     cb(null, true);
   } else {
-    cb(new Error("Only image (jpg, jpeg, png, webp) and video (mp4, mov, mkv, avi) files are allowed"));
+    cb(new Error("Only image/video files are allowed"));
   }
 };
 
