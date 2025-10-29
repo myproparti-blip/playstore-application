@@ -5,7 +5,7 @@ import axios from "axios";
 import User from "../models/userModel.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { MESSAGES } from "../utils/messages.js";
-import ApiError from "../utils/ApiError.js";
+import ApiError from "../utils/apiError.js";
 
 const FAST2SMS_API_KEY = process.env.FAST2SMS_API_KEY;
 const ENABLE_SMS = process.env.ENABLE_SMS === "true";

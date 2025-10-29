@@ -1,5 +1,5 @@
 import Agent from "../models/agentModel.js";
-import ApiError from "../utils/ApiError.js";
+import ApiError from "../utils/apiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { MESSAGES } from "../utils/messages.js";
 

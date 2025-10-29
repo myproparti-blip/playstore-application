@@ -1,5 +1,5 @@
 import Property from "../models/propertyModel.js";
-import ApiError from "../utils/ApiError.js";
+import ApiError from "../utils/apiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { MESSAGES } from "../utils/messages.js";
 
