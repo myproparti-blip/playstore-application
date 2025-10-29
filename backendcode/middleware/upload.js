@@ -4,8 +4,8 @@ import fs from "fs";
 
 const uploadPath = "uploads";
 
-// ✅ Only create uploads folder when running locally
-if (!process.env.VERCEL && process.env.NODE_ENV !== "production") {
+// ✅ Only run folder creation in local development (not in Vercel)
+if (process.env.VERCEL !== "1") {
   try {
     if (!fs.existsSync(uploadPath)) {
       fs.mkdirSync(uploadPath, { recursive: true });
@@ -15,15 +15,19 @@ if (!process.env.VERCEL && process.env.NODE_ENV !== "production") {
     console.error("❌ Failed to create uploads folder:", err);
   }
 } else {
-  console.log("⚠️ Running on Vercel — skipping folder creation (read-only filesystem)");
+  console.log("⚠️ Running on Vercel — skipping uploads folder creation");
 }
 
-// ✅ Configure multer
+// ✅ Configure Multer Storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    if (process.env.VERCEL) {
-      // Prevent writing on Vercel
-      return cb(new Error("File uploads are not supported on Vercel — use Cloudinary or S3."));
+    // Prevent disk writes on Vercel
+    if (process.env.VERCEL === "1") {
+      return cb(
+        new Error(
+          "❌ File uploads are not supported on Vercel — please use Cloudinary, S3, or another storage service."
+        )
+      );
     }
     cb(null, uploadPath);
   },
@@ -34,20 +38,21 @@ const storage = multer.diskStorage({
   },
 });
 
+// ✅ File Type Filter
 const fileFilter = (req, file, cb) => {
-  const allowedExt = /jpeg|jpg|png|webp|mp4|mov|mkv|avi/;
-  const ext = path.extname(file.originalname).toLowerCase();
-  if (allowedExt.test(ext)) {
+  const allowedExt = /\.(jpeg|jpg|png|webp|mp4|mov|mkv|avi)$/i;
+  if (allowedExt.test(file.originalname)) {
     cb(null, true);
   } else {
-    cb(new Error("Only image/video files are allowed"));
+    cb(new Error("❌ Only image/video files are allowed."));
   }
 };
 
+// ✅ Initialize Multer
 const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 50 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
 });
 
 export default upload;
