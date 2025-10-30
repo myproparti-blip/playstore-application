@@ -2,11 +2,19 @@ import Property from "../models/propertyModel.js";
 import ApiError from "../utils/apiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { MESSAGES } from "../utils/messages.js";
+import { v2 as cloudinary } from "cloudinary";
 
-// 🧠 Check if master admin
+// ☁️ Cloudinary config
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// 🔐 Check if master admin
 const isMasterAdmin = (req) => req.user?.phone === process.env.ADMIN_PHONE;
 
-// 🌐 Dynamically detect base URL (important for Vercel)
+// 🌐 Get base URL (fallback only for local use)
 const getBaseUrl = (req) => {
   const protocol = req.headers["x-forwarded-proto"] || req.protocol;
   const host = req.get("host");
@@ -15,53 +23,51 @@ const getBaseUrl = (req) => {
 
 // 🏠 CREATE PROPERTY
 export const createProperty = asyncHandler(async (req, res) => {
-  const { title, propertyType, addressLine1, locality, city, price, bedrooms } = req.body;
+  const { title, propertyType, addressLine1, city, price, bedrooms } = req.body;
 
-  // ✅ Validation
   if (!title || !addressLine1 || !city || !propertyType || !price || !bedrooms) {
     throw new ApiError(MESSAGES.PROPERTY.REQUIRED_FIELDS, 400);
   }
 
-  // 🖼 Handle images/videos (only works locally — Vercel can’t write files)
-  const images = req.files?.images?.map((f) => `/uploads/${f.filename}`) || [];
-  const videos = req.files?.videos?.map((f) => `/uploads/${f.filename}`) || [];
+  const uploadedImages = [];
+  const uploadedVideos = [];
 
-  const baseUrl = getBaseUrl(req);
-
-  // 🔍 Check for duplicate property
-  let existing = await Property.findOne({
-    user: req.user.id,
-    title: title.trim(),
-    propertyType,
-    addressLine1: addressLine1.trim(),
-    city: city.trim(),
-    bedrooms,
-    price,
-  });
-
-  if (existing) {
-    if (images.length) existing.images.push(...images);
-    if (videos.length) existing.videos.push(...videos);
-    Object.assign(existing, req.body, { lastUpdated: Date.now() });
-
-    const updated = await existing.save();
-    return res.status(200).json({
-      success: true,
-      message: MESSAGES.PROPERTY.DUPLICATE_FOUND,
-      data: {
-        ...updated.toObject(),
-        images: updated.images.map((i) => `${baseUrl}${i}`),
-        videos: updated.videos.map((v) => `${baseUrl}${v}`),
-      },
-    });
+  // ☁️ Upload images to Cloudinary
+  if (req.files?.images?.length) {
+    for (const file of req.files.images) {
+      try {
+        const result = await cloudinary.uploader.upload(file.path, {
+          folder: "properties/images",
+          resource_type: "image",
+        });
+        uploadedImages.push(result.secure_url);
+      } catch (err) {
+        console.error("Cloudinary image upload failed:", err.message);
+      }
+    }
   }
 
-  // 🆕 Create new property
+  // ☁️ Upload videos to Cloudinary (optional)
+  if (req.files?.videos?.length) {
+    for (const file of req.files.videos) {
+      try {
+        const result = await cloudinary.uploader.upload(file.path, {
+          folder: "properties/videos",
+          resource_type: "video",
+        });
+        uploadedVideos.push(result.secure_url);
+      } catch (err) {
+        console.error("Cloudinary video upload failed:", err.message);
+      }
+    }
+  }
+
+  // 🆕 Create property with Cloudinary URLs only
   const newProperty = new Property({
     ...req.body,
     user: req.user.id,
-    images,
-    videos,
+    images: uploadedImages,
+    videos: uploadedVideos,
     isApproved: false,
   });
 
@@ -70,29 +76,28 @@ export const createProperty = asyncHandler(async (req, res) => {
   res.status(201).json({
     success: true,
     message: MESSAGES.PROPERTY.ADD_SUCCESS,
-    data: {
-      ...saved.toObject(),
-      images: images.map((i) => `${baseUrl}${i}`),
-      videos: videos.map((v) => `${baseUrl}${v}`),
-    },
+    data: saved,
   });
 });
 
 // 📋 GET ALL PROPERTIES
 export const getAllProperties = asyncHandler(async (req, res) => {
-  const baseUrl = getBaseUrl(req);
   const properties = await Property.find().populate("user", "name email phoneNumber");
 
-  const formatted = properties.map((p) => ({
-    ...p.toObject(),
-    images: p.images.map((i) => `${baseUrl}${i}`),
-    videos: p.videos.map((v) => `${baseUrl}${v}`),
+  const propertiesWithUrls = properties.map((prop) => ({
+    ...prop.toObject(),
+    images: prop.images.map((url) =>
+      url.startsWith("http") ? url : `${getBaseUrl(req)}${url}`
+    ),
+    videos: prop.videos.map((url) =>
+      url.startsWith("http") ? url : `${getBaseUrl(req)}${url}`
+    ),
   }));
 
   res.status(200).json({
     success: true,
     message: MESSAGES.PROPERTY.FETCH_SUCCESS,
-    data: formatted,
+    data: propertiesWithUrls,
   });
 });
 
@@ -103,14 +108,20 @@ export const getPropertyById = asyncHandler(async (req, res) => {
 
   const baseUrl = getBaseUrl(req);
 
+  const propertyWithUrls = {
+    ...property.toObject(),
+    images: property.images.map((url) =>
+      url.startsWith("http") ? url : `${baseUrl}${url}`
+    ),
+    videos: property.videos.map((url) =>
+      url.startsWith("http") ? url : `${baseUrl}${url}`
+    ),
+  };
+
   res.status(200).json({
     success: true,
     message: MESSAGES.PROPERTY.FETCH_SINGLE_SUCCESS,
-    data: {
-      ...property.toObject(),
-      images: property.images?.map((i) => `${baseUrl}${i}`) || [],
-      videos: property.videos?.map((v) => `${baseUrl}${v}`) || [],
-    },
+    data: propertyWithUrls,
   });
 });
 
@@ -124,25 +135,41 @@ export const updateProperty = asyncHandler(async (req, res) => {
     throw new ApiError(MESSAGES.PROPERTY.NOT_AUTHORIZED, 403);
   }
 
-  // Handle file uploads
-  if (req.files?.images)
-    property.images.push(...req.files.images.map((f) => `/uploads/${f.filename}`));
-  if (req.files?.videos)
-    property.videos.push(...req.files.videos.map((f) => `/uploads/${f.filename}`));
+  const newImages = [];
+  const newVideos = [];
 
+  // Upload new Cloudinary images
+  if (req.files?.images?.length) {
+    for (const file of req.files.images) {
+      const result = await cloudinary.uploader.upload(file.path, {
+        folder: "properties/images",
+        resource_type: "image",
+      });
+      newImages.push(result.secure_url);
+    }
+  }
+
+  // Upload new Cloudinary videos
+  if (req.files?.videos?.length) {
+    for (const file of req.files.videos) {
+      const result = await cloudinary.uploader.upload(file.path, {
+        folder: "properties/videos",
+        resource_type: "video",
+      });
+      newVideos.push(result.secure_url);
+    }
+  }
+
+  property.images.push(...newImages);
+  property.videos.push(...newVideos);
   Object.assign(property, req.body, { lastUpdated: Date.now() });
-  const updated = await property.save();
 
-  const baseUrl = getBaseUrl(req);
+  const updated = await property.save();
 
   res.status(200).json({
     success: true,
     message: MESSAGES.PROPERTY.UPDATE_SUCCESS,
-    data: {
-      ...updated.toObject(),
-      images: updated.images.map((i) => `${baseUrl}${i}`),
-      videos: updated.videos.map((v) => `${baseUrl}${v}`),
-    },
+    data: updated,
   });
 });
 
@@ -152,9 +179,8 @@ export const deleteProperty = asyncHandler(async (req, res) => {
   if (!property) throw new ApiError(MESSAGES.PROPERTY.NOT_FOUND, 404);
 
   const isAdmin = isMasterAdmin(req);
-  if (property.user.toString() !== req.user.id && !isAdmin) {
+  if (property.user.toString() !== req.user.id && !isAdmin)
     throw new ApiError(MESSAGES.PROPERTY.NOT_AUTHORIZED, 403);
-  }
 
   await property.deleteOne();
 
@@ -164,7 +190,7 @@ export const deleteProperty = asyncHandler(async (req, res) => {
   });
 });
 
-// ✅ APPROVE PROPERTY (Admin only)
+// ✅ APPROVE PROPERTY
 export const approveProperty = asyncHandler(async (req, res) => {
   const property = await Property.findById(req.params.id);
   if (!property) throw new ApiError(MESSAGES.PROPERTY.NOT_FOUND, 404);
@@ -177,15 +203,10 @@ export const approveProperty = asyncHandler(async (req, res) => {
   property.approvalDate = Date.now();
 
   const updated = await property.save();
-  const baseUrl = getBaseUrl(req);
 
   res.status(200).json({
     success: true,
     message: MESSAGES.PROPERTY.APPROVE_SUCCESS,
-    data: {
-      ...updated.toObject(),
-      images: updated.images.map((i) => `${baseUrl}${i}`),
-      videos: updated.videos.map((v) => `${baseUrl}${v}`),
-    },
+    data: updated,
   });
 });
