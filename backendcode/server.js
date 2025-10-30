@@ -1,3 +1,4 @@
+// server.js
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -8,54 +9,70 @@ import { fileURLToPath } from "url";
 import connectDB from "./config/db.js";
 import { errorHandler } from "./middleware/errorMiddleware.js";
 
-// ===== Async wrapper for startup =====
-const startServer = async () => {
-  try {
-    await connectDB();
-    console.log("✅ MongoDB connected");
-  } catch (err) {
-    console.error("❌ Database connection failed:", err.message);
-  }
+// Import Routes
+import authRoutes from "./routes/authRoutes.js";
+import consultantRoutes from "./routes/consultantRoutes.js";
+import propertyRoutes from "./routes/propertyRoutes.js";
+import paymentRoutes from "./routes/paymentRoutes.js";
+import agentRoutes from "./routes/agentRoutes.js";
 
-  const app = express();
+const app = express();
 
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
+// ✅ Connect MongoDB
+connectDB();
 
-  app.use(
-    cors({
-      origin: "*",
-      methods: ["GET", "POST", "PUT", "DELETE"],
-      allowedHeaders: ["Content-Type", "Authorization"],
-    })
-  );
+// ✅ Path helpers
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+// ✅ Proper CORS configuration
+app.use(
+  cors({
+    origin: [
+      "https://playstore-application.vercel.app", // frontend hosted on Vercel
+      "http://localhost:3000", // local testing
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+  })
+);
 
-  app.use(
-    "/uploads",
-    express.static(path.join(__dirname, "uploads"), {
-      setHeaders: (res) => {
-        res.set("Access-Control-Allow-Origin", "*");
-        res.set("Cross-Origin-Resource-Policy", "cross-origin");
-      },
-    })
-  );
+// ✅ Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-  app.use("/api/auth", (await import("./routes/authRoutes.js")).default);
-  app.use("/api/consultants", (await import("./routes/consultantRoutes.js")).default);
-  app.use("/api/properties", (await import("./routes/propertyRoutes.js")).default);
-  app.use("/api/payments", (await import("./routes/paymentRoutes.js")).default);
-  app.use("/api/agents", (await import("./routes/agentRoutes.js")).default);
+// ✅ Serve uploaded static files
+app.use(
+  "/uploads",
+  express.static(path.join(__dirname, "uploads"), {
+    setHeaders: (res) => {
+      res.set("Access-Control-Allow-Origin", "*");
+      res.set("Cross-Origin-Resource-Policy", "cross-origin");
+    },
+  })
+);
 
-  app.get("/", (req, res) => {
-    res.send({ message: "✅ API is running successfully on Vercel!" });
-  });
+// ✅ API routes
+app.use("/api/auth", authRoutes);
+app.use("/api/consultants", consultantRoutes);
+app.use("/api/properties", propertyRoutes);
+app.use("/api/payments", paymentRoutes);
+app.use("/api/agents", agentRoutes);
 
-  app.use(errorHandler);
+// ✅ Default route
+app.get("/api", (req, res) => {
+  res.json({ message: "Backend API running successfully ✅" });
+});
 
-  return app;
-};
+// ✅ Error handler
+app.use(errorHandler);
 
-export default await startServer();
+// ✅ Export app for Vercel
+export default app;
+
+// ✅ Run locally (only in development)
+if (process.env.NODE_ENV !== "production") {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => console.log(`✅ Server running on http://localhost:${PORT}`));
+}
