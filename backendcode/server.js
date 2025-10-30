@@ -18,31 +18,30 @@ import agentRoutes from "./routes/agentRoutes.js";
 
 const app = express();
 
-// ✅ Connect MongoDB
-connectDB();
-
-// ✅ Path helpers
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// ✅ Proper CORS configuration
-app.use(
-  cors({
-    origin: [
-      "https://playstore-application.vercel.app", // frontend hosted on Vercel
-      "http://localhost:3000", // local testing
-    ],
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true,
-  })
-);
 
 // ✅ Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ Serve uploaded static files
+// ✅ CORS
+app.use(
+  cors({
+    origin: [
+      "https://playstore-application.vercel.app",
+      "http://localhost:3000",
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+  })
+);
+
+// ✅ Connect DB before routes
+await connectDB();
+
+// ✅ Static folder
 app.use(
   "/uploads",
   express.static(path.join(__dirname, "uploads"), {
@@ -53,7 +52,7 @@ app.use(
   })
 );
 
-// ✅ API routes
+// ✅ Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/consultants", consultantRoutes);
 app.use("/api/properties", propertyRoutes);
@@ -68,11 +67,13 @@ app.get("/api", (req, res) => {
 // ✅ Error handler
 app.use(errorHandler);
 
-// ✅ Export app for Vercel
+// ✅ Export app (for Vercel)
 export default app;
 
-// ✅ Run locally (only in development)
+// ✅ Local dev only
 if (process.env.NODE_ENV !== "production") {
   const PORT = process.env.PORT || 5000;
-  app.listen(PORT, () => console.log(`✅ Server running on http://localhost:${PORT}`));
+  app.listen(PORT, () =>
+    console.log(`✅ Server running on http://localhost:${PORT}`)
+  );
 }
