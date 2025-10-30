@@ -6,9 +6,16 @@ import { MESSAGES } from "../utils/messages.js";
 
 const isMasterAdmin = (req) => req.user?.phone === process.env.ADMIN_PHONE;
 
-// Helper function to get base URL
-const getBaseUrl = (req) => {
-  return `${req.protocol}://${req.get('host')}`;
+// ✅ Helper to get base URL (for local uploads only)
+const getBaseUrl = (req) => `${req.protocol}://${req.get("host")}`;
+
+// ✅ Helper to handle image paths
+const getFullUrl = (path, baseUrl) => {
+  if (!path) return null;
+  // If it's already an absolute URL (Cloudinary, S3, etc.), return as-is
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  // Else, prefix with base URL (for local files)
+  return `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
 };
 
 export const getConsultants = asyncHandler(async (req, res) => {
@@ -18,12 +25,11 @@ export const getConsultants = asyncHandler(async (req, res) => {
 
   try {
     const consultants = await consultantModel.find(filter).sort({ createdAt: -1 });
-    
-    // Transform consultants to include full image URLs
-    const consultantsWithFullUrls = consultants.map(consultant => ({
+
+    const consultantsWithFullUrls = consultants.map((consultant) => ({
       ...consultant.toObject(),
-      image: consultant.image ? `${baseUrl}${consultant.image}` : null,
-      idProof: consultant.idProof ? `${baseUrl}${consultant.idProof}` : null
+      image: getFullUrl(consultant.image, baseUrl),
+      idProof: getFullUrl(consultant.idProof, baseUrl),
     }));
 
     res.status(200).json({
@@ -47,12 +53,10 @@ export const getConsultantById = asyncHandler(async (req, res) => {
   const consultant = await consultantModel.findById(id);
   if (!consultant) throw new ApiError(MESSAGES.CONSULTANT.NOT_FOUND, 404);
 
-  // Add full URLs to image paths
   const consultantWithFullUrls = {
     ...consultant.toObject(),
-   image: consultant.image || null,
-idProof: consultant.idProof || null,
-
+    image: getFullUrl(consultant.image, baseUrl),
+    idProof: getFullUrl(consultant.idProof, baseUrl),
   };
 
   res.status(200).json({
@@ -91,7 +95,6 @@ export const addConsultant = asyncHandler(async (req, res) => {
     throw new ApiError(MESSAGES.CONSULTANT.REQUIRED_FIELDS, 400);
   }
 
-  // Validate moneyType
   if (moneyType && !["minute", "hour", "project"].includes(moneyType)) {
     throw new ApiError("Invalid moneyType. Must be 'minute', 'hour', or 'project'", 400);
   }
@@ -102,15 +105,14 @@ export const addConsultant = asyncHandler(async (req, res) => {
   });
   if (existing) throw new ApiError(MESSAGES.CONSULTANT.EXISTS, 400);
 
-  const imagePath = req.files.image[0].path; // Cloudinary URL
-const idProofPath = req.files.idProof[0].path; // Cloudinary URL
-
+  const imagePath = req.files.image[0].path;
+  const idProofPath = req.files.idProof[0].path;
 
   const formattedLanguages = Array.isArray(languages)
     ? languages
     : typeof languages === "string"
-    ? languages.split(",").map((l) => l.trim())
-    : [];
+      ? languages.split(",").map((l) => l.trim())
+      : [];
 
   try {
     const consultant = await consultantModel.create({
@@ -130,11 +132,10 @@ const idProofPath = req.files.idProof[0].path; // Cloudinary URL
       user: req.user?.id || null,
     });
 
-    // Return consultant with full URLs
     const consultantWithFullUrls = {
       ...consultant.toObject(),
-      image: `${baseUrl}${imagePath}`,
-      idProof: `${baseUrl}${idProofPath}`
+      image: getFullUrl(imagePath, baseUrl),
+      idProof: getFullUrl(idProofPath, baseUrl),
     };
 
     res.status(201).json({
@@ -162,7 +163,6 @@ export const updateConsultant = asyncHandler(async (req, res) => {
     throw new ApiError(MESSAGES.CONSULTANT.NOT_AUTHORIZED, 403);
   }
 
-  // Validate moneyType if provided
   if (req.body.moneyType && !["minute", "hour", "project"].includes(req.body.moneyType)) {
     throw new ApiError("Invalid moneyType. Must be 'minute', 'hour', or 'project'", 400);
   }
@@ -195,17 +195,15 @@ export const updateConsultant = asyncHandler(async (req, res) => {
     }
   });
 
- if (req.files?.image?.[0]) consultant.image = req.files.image[0].path;
-if (req.files?.idProof?.[0]) consultant.idProof = req.files.idProof[0].path;
+  if (req.files?.image?.[0]) consultant.image = req.files.image[0].path;
+  if (req.files?.idProof?.[0]) consultant.idProof = req.files.idProof[0].path;
 
   try {
     const updated = await consultant.save();
-    
-    // Return updated consultant with full URLs
     const updatedWithFullUrls = {
       ...updated.toObject(),
-      image: updated.image ? `${baseUrl}${updated.image}` : null,
-      idProof: updated.idProof ? `${baseUrl}${updated.idProof}` : null
+      image: getFullUrl(updated.image, baseUrl),
+      idProof: getFullUrl(updated.idProof, baseUrl),
     };
 
     res.status(200).json({
