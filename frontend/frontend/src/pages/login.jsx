@@ -20,81 +20,127 @@ export default function Login({ onLoginSuccess }) {
   const [agreed, setAgreed] = useState(false);
   const [loading, setLoading] = useState(false);
   const otpRefs = useRef([]);
-  const [isMobile, setIsMobile] = useState(false);
 
-  /* ----------------------- Handle Responsive & Zoom ----------------------- */
+  const [isMobile, setIsMobile] = useState(false);
+  
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth <= 768);
     checkMobile();
     window.addEventListener("resize", checkMobile);
-
-    // Prevent zoom on mobile
+    
+    // Prevent zooming on mobile
     const preventZoom = (e) => {
-      if (e.touches.length > 1) e.preventDefault();
+      if (e.touches.length > 1) {
+        e.preventDefault();
+      }
     };
-    const preventDoubleTapZoom = (() => {
-      let lastTouchEnd = 0;
-      return (e) => {
-        const now = Date.now();
-        if (now - lastTouchEnd <= 300) e.preventDefault();
-        lastTouchEnd = now;
-      };
-    })();
-
-    document.addEventListener("touchstart", preventZoom, { passive: false });
-    document.addEventListener("touchend", preventDoubleTapZoom, { passive: false });
-
+    
+    document.addEventListener('touchstart', preventZoom, { passive: false });
+    let lastTouchEnd = 0;
+    
+    const preventDoubleTapZoom = (e) => {
+      const now = (new Date()).getTime();
+      if (now - lastTouchEnd <= 300) {
+        e.preventDefault();
+      }
+      lastTouchEnd = now;
+    };
+    
+    document.addEventListener('touchend', preventDoubleTapZoom, { passive: false });
+    
+    // Set viewport to prevent zoom
     const viewport = document.querySelector('meta[name="viewport"]');
-    if (viewport)
-      viewport.setAttribute(
-        "content",
-        "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
-      );
-
+    if (viewport) {
+      viewport.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+    }
+    
     return () => {
       window.removeEventListener("resize", checkMobile);
-      document.removeEventListener("touchstart", preventZoom);
-      document.removeEventListener("touchend", preventDoubleTapZoom);
+      document.removeEventListener('touchstart', preventZoom);
+      document.removeEventListener('touchend', preventDoubleTapZoom);
     };
   }, []);
 
   /* ----------------------- Handle OTP Input ----------------------- */
   const handleOtpChange = async (val, index) => {
     if (!/^\d*$/.test(val)) return;
-
+    
     const newOtp = [...otpDigits];
     newOtp[index] = val;
     setOtpDigits(newOtp);
 
-    // Move focus to next input
-    if (val && index < 3) otpRefs.current[index + 1]?.focus();
+    // Move focus to next input when a digit is entered
+    if (val && index < 3) {
+      setTimeout(() => {
+        otpRefs.current[index + 1]?.focus();
+      }, 10);
+    }
 
-    // Auto verify when all 4 digits are entered
+    // Auto verify when all 4 digits are filled
     if (newOtp.every((d) => d !== "")) {
       const otp = newOtp.join("");
-      handleVerifyOtp(otp);
+      setLoading(true);
+      try {
+        const res = await verifyOtp(phone, otp, selectedRole);
+        if (res.success && res.data.success) {
+          localStorage.setItem("authToken", res.data.accessToken);
+          Toast.show({ content: res.data.message || "Login successful!" });
+          onLoginSuccess(res.data.user);
+        } else {
+          throw new Error(res.error);
+        }
+      } catch (err) {
+        console.error(err);
+        setOtpDigits(["", "", "", ""]);
+        setTimeout(() => {
+          otpRefs.current[0]?.focus();
+        }, 10);
+        Toast.show({ content: "Invalid OTP. Try again.", icon: "fail" });
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
-  /* ----------------------- Handle OTP KeyDown ----------------------- */
+  /* ----------------------- Handle OTP Key Down ----------------------- */
   const handleKeyDown = (e, index) => {
-    if (e.key === "Backspace") {
+    if (e.key === 'Backspace') {
       e.preventDefault();
+      
       const newOtp = [...otpDigits];
+      
+      // If current input is empty and backspace is pressed, move to previous input
       if (!newOtp[index] && index > 0) {
         newOtp[index - 1] = "";
         setOtpDigits(newOtp);
-        otpRefs.current[index - 1]?.focus();
-      } else if (newOtp[index]) {
+        setTimeout(() => {
+          otpRefs.current[index - 1]?.focus();
+        }, 10);
+      }
+      // If current input has value, clear it but stay in same input
+      else if (newOtp[index]) {
         newOtp[index] = "";
         setOtpDigits(newOtp);
       }
     }
-    if (e.key === "ArrowLeft" && index > 0) otpRefs.current[index - 1]?.focus();
-    if (e.key === "ArrowRight" && index < 3) otpRefs.current[index + 1]?.focus();
+    
+    // Handle arrow keys for navigation
+    if (e.key === 'ArrowLeft' && index > 0) {
+      e.preventDefault();
+      setTimeout(() => {
+        otpRefs.current[index - 1]?.focus();
+      }, 10);
+    }
+    
+    if (e.key === 'ArrowRight' && index < 3) {
+      e.preventDefault();
+      setTimeout(() => {
+        otpRefs.current[index + 1]?.focus();
+      }, 10);
+    }
   };
 
-  /* ----------------------- Send OTP ----------------------- */
+  /* ----------------------- Handle Send OTP ----------------------- */
   const handleSendOtp = async () => {
     if (!phone || !selectedRole || !agreed) {
       Toast.show({
@@ -115,8 +161,13 @@ export default function Login({ onLoginSuccess }) {
       if (res.success && res.data.success) {
         Toast.show({ content: res.data.message || "OTP sent successfully!" });
         setStep("otp");
-        setTimeout(() => otpRefs.current[0]?.focus(), 100);
-      } else throw new Error(res.error);
+        // Focus first OTP input when moving to OTP step
+        setTimeout(() => {
+          otpRefs.current[0]?.focus();
+        }, 100);
+      } else {
+        throw new Error(res.error);
+      }
     } catch (err) {
       console.error(err);
       Toast.show({ content: "Failed to send OTP", icon: "fail" });
@@ -125,7 +176,7 @@ export default function Login({ onLoginSuccess }) {
     }
   };
 
-  /* ----------------------- Resend OTP ----------------------- */
+  /* ----------------------- Handle Resend OTP ----------------------- */
   const handleResendOtp = async () => {
     if (!phone) {
       Toast.show({ content: "Please enter a valid phone number.", icon: "fail" });
@@ -138,8 +189,12 @@ export default function Login({ onLoginSuccess }) {
       if (res.success && res.data.success) {
         Toast.show({ content: res.data.message || "OTP resent successfully!" });
         setOtpDigits(["", "", "", ""]);
-        otpRefs.current[0]?.focus();
-      } else throw new Error(res.error);
+        setTimeout(() => {
+          otpRefs.current[0]?.focus();
+        }, 10);
+      } else {
+        throw new Error(res.error);
+      }
     } catch (err) {
       console.error(err);
       Toast.show({ content: "Failed to resend OTP", icon: "fail" });
@@ -148,7 +203,23 @@ export default function Login({ onLoginSuccess }) {
     }
   };
 
-  /* ----------------------- Verify OTP ----------------------- */
+  /* ----------------------- Handle Paste OTP ----------------------- */
+  const handlePaste = (e) => {
+    e.preventDefault();
+    const pasteData = e.clipboardData.getData('text').slice(0, 4);
+    if (/^\d{4}$/.test(pasteData)) {
+      const newOtp = pasteData.split('');
+      setOtpDigits(newOtp);
+      
+      // Auto verify after paste
+      setTimeout(() => {
+        const otp = newOtp.join("");
+        handleVerifyOtp(otp);
+      }, 100);
+    }
+  };
+
+  /* ----------------------- Separate Verify Function ----------------------- */
   const handleVerifyOtp = async (otp) => {
     setLoading(true);
     try {
@@ -157,29 +228,21 @@ export default function Login({ onLoginSuccess }) {
         localStorage.setItem("authToken", res.data.accessToken);
         Toast.show({ content: res.data.message || "Login successful!" });
         onLoginSuccess(res.data.user);
-      } else throw new Error(res.error);
+      } else {
+        throw new Error(res.error);
+      }
     } catch (err) {
       console.error(err);
       setOtpDigits(["", "", "", ""]);
-      otpRefs.current[0]?.focus();
+      setTimeout(() => {
+        otpRefs.current[0]?.focus();
+      }, 10);
       Toast.show({ content: "Invalid OTP. Try again.", icon: "fail" });
     } finally {
       setLoading(false);
     }
   };
 
-  /* ----------------------- Handle Paste OTP ----------------------- */
-  const handlePaste = (e) => {
-    e.preventDefault();
-    const pasteData = e.clipboardData.getData("text").slice(0, 4);
-    if (/^\d{4}$/.test(pasteData)) {
-      const newOtp = pasteData.split("");
-      setOtpDigits(newOtp);
-      setTimeout(() => handleVerifyOtp(pasteData), 100);
-    }
-  };
-
-  /* ----------------------- UI ----------------------- */
   return (
     <div style={styles.container}>
       {loading && (
@@ -203,7 +266,6 @@ export default function Login({ onLoginSuccess }) {
             </div>
 
             <div style={styles.formContainer}>
-              {/* Mobile Number */}
               <div style={styles.inputGroup}>
                 <label style={styles.inputLabel}>Mobile Number</label>
                 <div style={styles.phoneInputContainer}>
@@ -221,7 +283,6 @@ export default function Login({ onLoginSuccess }) {
                 </div>
               </div>
 
-              {/* Roles */}
               <div style={styles.inputGroup}>
                 <label style={styles.inputLabel}>Select Your Role</label>
                 <Grid columns={2} gap={8}>
@@ -244,9 +305,12 @@ export default function Login({ onLoginSuccess }) {
                 </Grid>
               </div>
 
-              {/* Terms */}
               <div style={styles.termsContainer}>
-                <Checkbox checked={agreed} onChange={setAgreed} style={styles.checkbox}>
+                <Checkbox
+                  checked={agreed}
+                  onChange={setAgreed}
+                  style={styles.checkbox}
+                >
                   <span style={styles.checkboxText}>
                     I agree to the{" "}
                     <a href="#" style={styles.link}>
@@ -260,7 +324,6 @@ export default function Login({ onLoginSuccess }) {
                 </Checkbox>
               </div>
 
-              {/* Send OTP */}
               <Button
                 block
                 color="primary"
@@ -268,6 +331,7 @@ export default function Login({ onLoginSuccess }) {
                 style={styles.sendButton}
                 onClick={handleSendOtp}
                 disabled={!phone || !selectedRole || !agreed}
+                loading={loading}
               >
                 Send OTP
               </Button>
@@ -280,8 +344,8 @@ export default function Login({ onLoginSuccess }) {
               <h2 style={styles.title}>Verify OTP</h2>
               <p style={styles.subtitle}>
                 Sent to +91 {phone}{" "}
-                <span
-                  style={styles.changeLink}
+                <span 
+                  style={styles.changeLink} 
                   onClick={() => {
                     setStep("phone");
                     setOtpDigits(["", "", "", ""]);
@@ -292,9 +356,19 @@ export default function Login({ onLoginSuccess }) {
               </p>
             </div>
 
-            {/* OTP Input Section */}
+            {/* ✅ Dummy OTP Display - Added above OTP field */}
+            <div style={styles.dummyOtpContainer}>
+              <div style={styles.dummyOtpBox}>
+                <span style={styles.dummyOtpLabel}>For Testing Use OTP:</span>
+                <span style={styles.dummyOtpCode}>1234</span>
+              </div>
+            </div>
+
             <div style={styles.otpSection}>
-              <div style={styles.otpContainer} onPaste={handlePaste}>
+              <div 
+                style={styles.otpContainer}
+                onPaste={handlePaste}
+              >
                 {otpDigits.map((d, i) => (
                   <Input
                     key={i}
@@ -311,10 +385,12 @@ export default function Login({ onLoginSuccess }) {
                 ))}
               </div>
 
-              <p style={styles.otpHint}>Enter the 4-digit OTP to verify</p>
+              <p style={styles.otpHint}>
+                OTP will auto-verify once all 4 digits are entered
+              </p>
 
               <div style={styles.resend}>
-                <span style={styles.resendText}>Didn’t receive OTP?</span>
+                <span style={styles.resendText}>Didn't receive OTP? </span>
                 <Button
                   size="small"
                   color="primary"
@@ -333,9 +409,6 @@ export default function Login({ onLoginSuccess }) {
     </div>
   );
 }
-
-/* ✅ Keep all your styles from previous version (no dummyOtpBox) */
-
 
 /* -------------------------- PERFECT STYLES -------------------------- */
 const styles = {
