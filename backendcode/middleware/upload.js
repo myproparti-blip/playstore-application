@@ -9,17 +9,26 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// ✅ Configure Cloudinary Storage
+// ✅ Configure Cloudinary Storage (Dynamic Folder)
 const storage = new CloudinaryStorage({
   cloudinary,
   params: async (req, file) => {
-    // Determine folder and type
-    let folder = "consultants";
+    // Default folder
+    let folder = "general_uploads";
     let resource_type = "image";
 
+    // If uploading from specific routes
+    if (req.originalUrl.includes("/consultant")) {
+      folder = "consultants";
+    } else if (req.originalUrl.includes("/property")) {
+      folder = "properties/images";
+    }
+
+    // Detect videos
     if (file.mimetype.startsWith("video/")) {
       resource_type = "video";
-      folder = "consultant_videos";
+      if (folder.includes("property")) folder = "properties/videos";
+      else folder = "consultant_videos";
     }
 
     return {
@@ -48,7 +57,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB limit
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
 });
 
 export default upload;

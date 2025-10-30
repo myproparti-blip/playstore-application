@@ -14,7 +14,7 @@ cloudinary.config({
 // 🔐 Check if master admin
 const isMasterAdmin = (req) => req.user?.phone === process.env.ADMIN_PHONE;
 
-// 🌐 Get base URL (fallback only for local use)
+// 🌐 Get base URL (fallback for non-Cloudinary URLs)
 const getBaseUrl = (req) => {
   const protocol = req.headers["x-forwarded-proto"] || req.protocol;
   const host = req.get("host");
@@ -29,40 +29,10 @@ export const createProperty = asyncHandler(async (req, res) => {
     throw new ApiError(MESSAGES.PROPERTY.REQUIRED_FIELDS, 400);
   }
 
-  const uploadedImages = [];
-  const uploadedVideos = [];
+  // ✅ Use Cloudinary URLs directly from multer-storage-cloudinary
+  const uploadedImages = req.files?.images?.map((file) => file.path) || [];
+  const uploadedVideos = req.files?.videos?.map((file) => file.path) || [];
 
-  // ☁️ Upload images to Cloudinary
-  if (req.files?.images?.length) {
-    for (const file of req.files.images) {
-      try {
-        const result = await cloudinary.uploader.upload(file.path, {
-          folder: "properties/images",
-          resource_type: "image",
-        });
-        uploadedImages.push(result.secure_url);
-      } catch (err) {
-        console.error("Cloudinary image upload failed:", err.message);
-      }
-    }
-  }
-
-  // ☁️ Upload videos to Cloudinary (optional)
-  if (req.files?.videos?.length) {
-    for (const file of req.files.videos) {
-      try {
-        const result = await cloudinary.uploader.upload(file.path, {
-          folder: "properties/videos",
-          resource_type: "video",
-        });
-        uploadedVideos.push(result.secure_url);
-      } catch (err) {
-        console.error("Cloudinary video upload failed:", err.message);
-      }
-    }
-  }
-
-  // 🆕 Create property with Cloudinary URLs only
   const newProperty = new Property({
     ...req.body,
     user: req.user.id,
@@ -107,7 +77,6 @@ export const getPropertyById = asyncHandler(async (req, res) => {
   if (!property) throw new ApiError(MESSAGES.PROPERTY.NOT_FOUND, 404);
 
   const baseUrl = getBaseUrl(req);
-
   const propertyWithUrls = {
     ...property.toObject(),
     images: property.images.map((url) =>
@@ -135,30 +104,9 @@ export const updateProperty = asyncHandler(async (req, res) => {
     throw new ApiError(MESSAGES.PROPERTY.NOT_AUTHORIZED, 403);
   }
 
-  const newImages = [];
-  const newVideos = [];
-
-  // Upload new Cloudinary images
-  if (req.files?.images?.length) {
-    for (const file of req.files.images) {
-      const result = await cloudinary.uploader.upload(file.path, {
-        folder: "properties/images",
-        resource_type: "image",
-      });
-      newImages.push(result.secure_url);
-    }
-  }
-
-  // Upload new Cloudinary videos
-  if (req.files?.videos?.length) {
-    for (const file of req.files.videos) {
-      const result = await cloudinary.uploader.upload(file.path, {
-        folder: "properties/videos",
-        resource_type: "video",
-      });
-      newVideos.push(result.secure_url);
-    }
-  }
+  // ✅ Use new Cloudinary URLs directly
+  const newImages = req.files?.images?.map((file) => file.path) || [];
+  const newVideos = req.files?.videos?.map((file) => file.path) || [];
 
   property.images.push(...newImages);
   property.videos.push(...newVideos);
