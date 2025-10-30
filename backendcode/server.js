@@ -1,4 +1,3 @@
-// server.js
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -25,7 +24,7 @@ const __dirname = path.dirname(__filename);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ CORS
+// ✅ CORS Configuration
 app.use(
   cors({
     origin: [
@@ -38,19 +37,10 @@ app.use(
   })
 );
 
-// ✅ Connect DB before routes
+// ✅ Connect to MongoDB
 await connectDB();
 
-// ✅ Static folder
-app.use(
-  "/uploads",
-  express.static(path.join(__dirname, "uploads"), {
-    setHeaders: (res) => {
-      res.set("Access-Control-Allow-Origin", "*");
-      res.set("Cross-Origin-Resource-Policy", "cross-origin");
-    },
-  })
-);
+
 
 // ✅ Routes
 app.use("/api/auth", authRoutes);
@@ -59,21 +49,21 @@ app.use("/api/properties", propertyRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/agents", agentRoutes);
 
-// ✅ Default route
+// ✅ Health check route
 app.get("/api", (req, res) => {
   res.json({ message: "Backend API running successfully ✅" });
 });
 
-// ✅ Error handler
+// ✅ Error handler middleware
 app.use(errorHandler);
 
 // ✅ Export app (for Vercel)
 export default app;
 
-// ✅ Local dev only
+// ✅ Local Development Server
 if (process.env.NODE_ENV !== "production") {
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, () =>
-    console.log(`✅ Server running on http://localhost:${PORT}`)
+    console.log(`✅ Server running locally at http://localhost:${PORT}`)
   );
 }

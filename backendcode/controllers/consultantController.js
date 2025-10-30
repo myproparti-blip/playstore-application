@@ -50,8 +50,9 @@ export const getConsultantById = asyncHandler(async (req, res) => {
   // Add full URLs to image paths
   const consultantWithFullUrls = {
     ...consultant.toObject(),
-    image: consultant.image ? `${baseUrl}${consultant.image}` : null,
-    idProof: consultant.idProof ? `${baseUrl}${consultant.idProof}` : null
+   image: consultant.image || null,
+idProof: consultant.idProof || null,
+
   };
 
   res.status(200).json({
@@ -101,8 +102,9 @@ export const addConsultant = asyncHandler(async (req, res) => {
   });
   if (existing) throw new ApiError(MESSAGES.CONSULTANT.EXISTS, 400);
 
-  const imagePath = `/uploads/${req.files.image[0].filename}`;
-  const idProofPath = `/uploads/${req.files.idProof[0].filename}`;
+  const imagePath = req.files.image[0].path; // Cloudinary URL
+const idProofPath = req.files.idProof[0].path; // Cloudinary URL
+
 
   const formattedLanguages = Array.isArray(languages)
     ? languages
@@ -193,10 +195,8 @@ export const updateConsultant = asyncHandler(async (req, res) => {
     }
   });
 
-  if (req.files?.image?.[0])
-    consultant.image = `/uploads/${req.files.image[0].filename}`;
-  if (req.files?.idProof?.[0])
-    consultant.idProof = `/uploads/${req.files.idProof[0].filename}`;
+ if (req.files?.image?.[0]) consultant.image = req.files.image[0].path;
+if (req.files?.idProof?.[0]) consultant.idProof = req.files.idProof[0].path;
 
   try {
     const updated = await consultant.save();
