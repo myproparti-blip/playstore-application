@@ -116,74 +116,13 @@ export const resendOtp = asyncHandler(async (req, res) => {
   });
 });
 
-// export const verifyOtp = asyncHandler(async (req, res) => {
-//   const { phone, otp, role } = req.body;
-//   if (!phone || !otp) throw new ApiError(MESSAGES.AUTH.OTP_INVALID, 400);
-
-//   const otpData = otpStore.get(phone);
-//   if (!otpData) throw new ApiError(MESSAGES.AUTH.OTP_EXPIRED, 400);
-//   if (otpData.code !== otp) throw new ApiError(MESSAGES.AUTH.OTP_INCORRECT, 400);
-
-//   let user;
-//   const isAdmin = phone === ADMIN_PHONE;
-
-//   if (isAdmin) {
-//     user = (await User.findOne({ phone })) || (await User.create({ phone, role: ["admin"] }));
-//     if (!user.role.includes("admin")) {
-//       user.role = ["admin"];
-//       await user.save();
-//     }
-
-//     const allUsers = await User.find({}).select("-__v");
-//     otpStore.delete(phone);
-
-//     const accessToken = generateAccessToken(user);
-//     return res.status(200).json({
-//       success: true,
-//       message: MESSAGES.AUTH.ADMIN_LOGIN_SUCCESS,
-//       user,
-//       accessToken,
-//       allUsers,
-//     });
-//   }
-
-//   if (!role) throw new ApiError(MESSAGES.AUTH.PHONE_ROLE_REQUIRED, 400);
-
-//   user = await User.findOne({ phone });
-//   if (!user) {
-//     user = await User.create({ phone, role: [role] });
-//   } else if (!user.role.includes(role)) {
-//     user.role.push(role);
-//     await user.save();
-//   }
-
-//   otpStore.delete(phone);
-//   const accessToken = generateAccessToken(user);
-
-//   res.status(200).json({
-//     success: true,
-//     message: MESSAGES.AUTH.LOGIN_SUCCESS,
-//     user,
-//     accessToken,
-//   });
-// });
-
-
 export const verifyOtp = asyncHandler(async (req, res) => {
   const { phone, otp, role } = req.body;
   if (!phone || !otp) throw new ApiError(MESSAGES.AUTH.OTP_INVALID, 400);
 
-  // ✅ DUMMY OTP VALIDATION - Added for testing purposes
-  const isDummyOtp = otp === "1234";
-  
   const otpData = otpStore.get(phone);
-  
-  // Check if OTP is valid (either dummy OTP or actual stored OTP)
-  if (!isDummyOtp) {
-    // Existing OTP validation logic
-    if (!otpData) throw new ApiError(MESSAGES.AUTH.OTP_EXPIRED, 400);
-    if (otpData.code !== otp) throw new ApiError(MESSAGES.AUTH.OTP_INCORRECT, 400);
-  }
+  if (!otpData) throw new ApiError(MESSAGES.AUTH.OTP_EXPIRED, 400);
+  if (otpData.code !== otp) throw new ApiError(MESSAGES.AUTH.OTP_INCORRECT, 400);
 
   let user;
   const isAdmin = phone === ADMIN_PHONE;
@@ -196,11 +135,7 @@ export const verifyOtp = asyncHandler(async (req, res) => {
     }
 
     const allUsers = await User.find({}).select("-__v");
-    
-    // Only delete from store if it was a real OTP (not dummy)
-    if (!isDummyOtp) {
-      otpStore.delete(phone);
-    }
+    otpStore.delete(phone);
 
     const accessToken = generateAccessToken(user);
     return res.status(200).json({
@@ -222,11 +157,7 @@ export const verifyOtp = asyncHandler(async (req, res) => {
     await user.save();
   }
 
-  // Only delete from store if it was a real OTP (not dummy)
-  if (!isDummyOtp) {
-    otpStore.delete(phone);
-  }
-  
+  otpStore.delete(phone);
   const accessToken = generateAccessToken(user);
 
   res.status(200).json({
@@ -236,6 +167,7 @@ export const verifyOtp = asyncHandler(async (req, res) => {
     accessToken,
   });
 });
+
 
 export const profile = asyncHandler(async (req, res) => {
   const isAdmin = req.user.phone === ADMIN_PHONE;
