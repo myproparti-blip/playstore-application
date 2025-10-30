@@ -5,9 +5,13 @@ import { MESSAGES } from "../utils/messages.js";
 
 const isMasterAdmin = (req) => req.user?.phone === process.env.ADMIN_PHONE;
 
-// Helper: Build base URL dynamically
-const getBaseUrl = (req) => `${req.protocol}://${req.get("host")}`;
+// 🧩 Dynamically detect base URL (important for Vercel)
+const getBaseUrl = (req) => {
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+  return `${protocol}://${req.get("host")}`;
+};
 
+// 🏠 Create property
 export const createProperty = asyncHandler(async (req, res) => {
   const { title, propertyType, addressLine1, locality, city, price, bedrooms } = req.body;
 
@@ -15,20 +19,22 @@ export const createProperty = asyncHandler(async (req, res) => {
     throw new ApiError(MESSAGES.PROPERTY.REQUIRED_FIELDS, 400);
   }
 
-  // Save only relative paths for files
+  // 🖼 Handle files safely (only local env writes)
   const images = req.files?.images?.map((f) => `/uploads/${f.filename}`) || [];
   const videos = req.files?.videos?.map((f) => `/uploads/${f.filename}`) || [];
 
+  // 🔎 Check for duplicate
   let property = await Property.findOne({
     user: req.user.id,
     title: title.trim(),
     propertyType,
     addressLine1: addressLine1.trim(),
-    locality: locality ? locality.trim() : "",
     city: city.trim(),
     bedrooms,
     price,
   });
+
+  const baseUrl = getBaseUrl(req);
 
   if (property) {
     if (images.length) property.images.push(...images);
@@ -36,21 +42,19 @@ export const createProperty = asyncHandler(async (req, res) => {
     Object.assign(property, req.body, { lastUpdated: Date.now() });
     const updatedProperty = await property.save();
 
-    const baseUrl = getBaseUrl(req);
-    const propertyWithFullUrls = {
-      ...updatedProperty.toObject(),
-      images: property.images.map((img) => `${baseUrl}${img}`),
-      videos: property.videos.map((vid) => `${baseUrl}${vid}`),
-    };
-
     return res.status(200).json({
       success: true,
       message: MESSAGES.PROPERTY.DUPLICATE_FOUND,
-      data: propertyWithFullUrls,
+      data: {
+        ...updatedProperty.toObject(),
+        images: property.images.map((i) => `${baseUrl}${i}`),
+        videos: property.videos.map((v) => `${baseUrl}${v}`),
+      },
     });
   }
 
-  property = new Property({
+  // 🆕 Create new
+  const newProperty = new Property({
     ...req.body,
     user: req.user.id,
     images,
@@ -58,83 +62,63 @@ export const createProperty = asyncHandler(async (req, res) => {
     isApproved: false,
   });
 
-  const savedProperty = await property.save();
-  const baseUrl = getBaseUrl(req);
+  const saved = await newProperty.save();
 
-  const propertyWithFullUrls = {
-    ...savedProperty.toObject(),
-    images: images.map((img) => `${baseUrl}${img}`),
-    videos: videos.map((vid) => `${baseUrl}${vid}`),
-  };
-
-  return res.status(201).json({
+  res.status(201).json({
     success: true,
     message: MESSAGES.PROPERTY.ADD_SUCCESS,
-    data: propertyWithFullUrls,
+    data: {
+      ...saved.toObject(),
+      images: images.map((i) => `${baseUrl}${i}`),
+      videos: videos.map((v) => `${baseUrl}${v}`),
+    },
   });
 });
 
+// 📋 Get all
 export const getAllProperties = asyncHandler(async (req, res) => {
   const baseUrl = getBaseUrl(req);
   const properties = await Property.find().populate("user", "name email phoneNumber");
 
-  const propertiesWithFullUrls = properties.map((property) => ({
-    ...property.toObject(),
-    images: property.images.map((img) => `${baseUrl}${img}`),
-    videos: property.videos.map((vid) => `${baseUrl}${vid}`),
+  const formatted = properties.map((p) => ({
+    ...p.toObject(),
+    images: p.images.map((i) => `${baseUrl}${i}`),
+    videos: p.videos.map((v) => `${baseUrl}${v}`),
   }));
 
   res.status(200).json({
     success: true,
     message: MESSAGES.PROPERTY.FETCH_SUCCESS,
-    data: propertiesWithFullUrls,
+    data: formatted,
   });
 });
 
+// 🔍 Get by ID
 export const getPropertyById = asyncHandler(async (req, res) => {
-  const property = await Property.findById(req.params.id).populate(
-    "user",
-    "name email phoneNumber"
-  );
+  const property = await Property.findById(req.params.id).populate("user", "name email phoneNumber");
+  if (!property) throw new ApiError(MESSAGES.PROPERTY.NOT_FOUND, 404);
 
-  // ✅ If property not found
-  if (!property) {
-    throw new ApiError(MESSAGES.PROPERTY.NOT_FOUND, 404);
-  }
-
-  const isAdmin = isMasterAdmin(req);
-
-  // ✅ Safe user ID extraction (won’t crash if user is null)
-  const propertyUserId = property.user?._id?.toString();
-  const requestUserId = req.user?.id;
-
-  // 🧩 If property isn’t approved, and requester isn’t owner or admin
- 
   const baseUrl = getBaseUrl(req);
-
-  const propertyWithFullUrls = {
-    ...property.toObject(),
-    images: property.images?.map((img) => `${baseUrl}${img}`) || [],
-    videos: property.videos?.map((vid) => `${baseUrl}${vid}`) || [],
-  };
 
   res.status(200).json({
     success: true,
     message: MESSAGES.PROPERTY.FETCH_SINGLE_SUCCESS,
-    data: propertyWithFullUrls,
+    data: {
+      ...property.toObject(),
+      images: property.images?.map((i) => `${baseUrl}${i}`) || [],
+      videos: property.videos?.map((v) => `${baseUrl}${v}`) || [],
+    },
   });
 });
 
-
-
+// ✏️ Update
 export const updateProperty = asyncHandler(async (req, res) => {
   const property = await Property.findById(req.params.id);
   if (!property) throw new ApiError(MESSAGES.PROPERTY.NOT_FOUND, 404);
 
   const isAdmin = isMasterAdmin(req);
-  if (property.user.toString() !== req.user.id && !isAdmin) {
+  if (property.user.toString() !== req.user.id && !isAdmin)
     throw new ApiError(MESSAGES.PROPERTY.NOT_AUTHORIZED, 403);
-  }
 
   if (req.files?.images)
     property.images.push(...req.files.images.map((f) => `/uploads/${f.filename}`));
@@ -142,30 +126,29 @@ export const updateProperty = asyncHandler(async (req, res) => {
     property.videos.push(...req.files.videos.map((f) => `/uploads/${f.filename}`));
 
   Object.assign(property, req.body, { lastUpdated: Date.now() });
-  const updatedProperty = await property.save();
+  const updated = await property.save();
 
   const baseUrl = getBaseUrl(req);
-  const updatedWithFullUrls = {
-    ...updatedProperty.toObject(),
-    images: property.images.map((img) => `${baseUrl}${img}`),
-    videos: property.videos.map((vid) => `${baseUrl}${vid}`),
-  };
 
   res.status(200).json({
     success: true,
     message: MESSAGES.PROPERTY.UPDATE_SUCCESS,
-    data: updatedWithFullUrls,
+    data: {
+      ...updated.toObject(),
+      images: updated.images.map((i) => `${baseUrl}${i}`),
+      videos: updated.videos.map((v) => `${baseUrl}${v}`),
+    },
   });
 });
 
+// 🗑 Delete
 export const deleteProperty = asyncHandler(async (req, res) => {
   const property = await Property.findById(req.params.id);
   if (!property) throw new ApiError(MESSAGES.PROPERTY.NOT_FOUND, 404);
 
   const isAdmin = isMasterAdmin(req);
-  if (property.user.toString() !== req.user.id && !isAdmin) {
+  if (property.user.toString() !== req.user.id && !isAdmin)
     throw new ApiError(MESSAGES.PROPERTY.NOT_AUTHORIZED, 403);
-  }
 
   await property.deleteOne();
 
@@ -175,6 +158,7 @@ export const deleteProperty = asyncHandler(async (req, res) => {
   });
 });
 
+// ✅ Approve
 export const approveProperty = asyncHandler(async (req, res) => {
   const property = await Property.findById(req.params.id);
   if (!property) throw new ApiError(MESSAGES.PROPERTY.NOT_FOUND, 404);
@@ -186,18 +170,17 @@ export const approveProperty = asyncHandler(async (req, res) => {
   property.approvedBy = req.user.id;
   property.approvalDate = Date.now();
 
-  const updatedProperty = await property.save();
+  const updated = await property.save();
 
   const baseUrl = getBaseUrl(req);
-  const propertyWithFullUrls = {
-    ...updatedProperty.toObject(),
-    images: property.images.map((img) => `${baseUrl}${img}`),
-    videos: property.videos.map((vid) => `${baseUrl}${vid}`),
-  };
 
   res.status(200).json({
     success: true,
     message: MESSAGES.PROPERTY.APPROVE_SUCCESS,
-    data: propertyWithFullUrls,
+    data: {
+      ...updated.toObject(),
+      images: updated.images.map((i) => `${baseUrl}${i}`),
+      videos: updated.videos.map((v) => `${baseUrl}${v}`),
+    },
   });
 });
